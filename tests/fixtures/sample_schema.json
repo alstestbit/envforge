@@ -1,0 +1,40 @@
+{
+  "name": "my-app",
+  "version": "1.0",
+  "variables": [
+    {
+      "name": "APP_ENV",
+      "type": "string",
+      "required": true,
+      "description": "Deployment environment",
+      "allowed_values": ["development", "staging", "production"]
+    },
+    {
+      "name": "PORT",
+      "type": "integer",
+      "required": false,
+      "default": 8080,
+      "description": "HTTP server port"
+    },
+    {
+      "name": "DATABASE_URL",
+      "type": "string",
+      "required": true,
+      "description": "PostgreSQL connection string",
+      "pattern": "^postgres://"
+    },
+    {
+      "name": "DEBUG",
+      "type": "boolean",
+      "required": false,
+      "default": false,
+      "description": "Enable debug mode"
+    },
+    {
+      "name": "API_KEY",
+      "type": "string",
+      "required": true,
+      "description": "Third-party API key"
+    }
+  ]
+}
