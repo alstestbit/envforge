@@ -1,14 +1,11 @@
-"""Command-line interface for envforge."""
-
-from __future__ import annotations
-
+"""CLI entry point for envforge."""
 import argparse
 import sys
-
-from envforge.generator import generate_env_file, generate_env_string
 from envforge.schema import Schema
-from envforge.parser import parse_env_file
+from envforge.generator import generate_env_string
 from envforge.validator import Validator
+from envforge.parser import parse_env_file
+from envforge.differ import diff_env_against_schema, diff_two_envs
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -16,89 +13,84 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="envforge",
         description="Generate and validate .env files from schema definitions.",
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
-    gen = sub.add_parser("generate", help="Generate a .env file from a schema.")
-    gen.add_argument("schema", help="Path to the JSON schema file.")
-    gen.add_argument("-o", "--output", help="Output .env file path (default: stdout).")
-    gen.add_argument("-e", "--environment", help="Environment name for the header comment.")
-    gen.add_argument(
-        "--no-comments", action="store_true", help="Omit descriptive comments."
-    )
-    gen.add_argument(
-        "--no-defaults", action="store_true", help="Do not fill in default values."
-    )
+    # generate
+    gen_parser = subparsers.add_parser("generate", help="Generate a .env file from a schema.")
+    gen_parser.add_argument("schema", help="Path to schema JSON file.")
+    gen_parser.add_argument("-o", "--output", help="Output .env file path (default: stdout).")
 
-    val = sub.add_parser("validate", help="Validate a .env file against a schema.")
-    val.add_argument("schema", help="Path to the JSON schema file.")
-    val.add_argument("env", help="Path to the .env file to validate.")
+    # validate
+    val_parser = subparsers.add_parser("validate", help="Validate a .env file against a schema.")
+    val_parser.add_argument("schema", help="Path to schema JSON file.")
+    val_parser.add_argument("env", help="Path to .env file to validate.")
+
+    # diff
+    diff_parser = subparsers.add_parser("diff", help="Diff a .env file against a schema or another .env.")
+    diff_parser.add_argument("base", help="Schema JSON file or base .env file.")
+    diff_parser.add_argument("target", help="Target .env file to compare.")
+    diff_parser.add_argument(
+        "--mode",
+        choices=["schema", "env"],
+        default="schema",
+        help="Diff mode: against schema (default) or another env file.",
+    )
 
     return parser
 
 
-def cmd_generate(args: argparse.Namespace) -> int:
-    try:
-        schema = Schema.from_json(args.schema)
-    except Exception as exc:
-        print(f"[envforge] Failed to load schema: {exc}", file=sys.stderr)
-        return 1
-
-    content = generate_env_string(
-        schema,
-        environment=args.environment,
-        include_comments=not args.no_comments,
-        use_defaults=not args.no_defaults,
-    )
-
+def cmd_generate(args) -> int:
+    schema = Schema.from_json(args.schema)
+    content = generate_env_string(schema)
     if args.output:
-        try:
-            generate_env_file(
-                schema,
-                args.output,
-                environment=args.environment,
-                include_comments=not args.no_comments,
-                use_defaults=not args.no_defaults,
-            )
-            print(f"[envforge] Written to {args.output}")
-        except OSError as exc:
-            print(f"[envforge] Could not write file: {exc}", file=sys.stderr)
-            return 1
+        with open(args.output, "w") as f:
+            f.write(content)
+        print(f"Generated: {args.output}")
     else:
         print(content, end="")
     return 0
 
 
-def cmd_validate(args: argparse.Namespace) -> int:
-    try:
-        schema = Schema.from_json(args.schema)
-    except Exception as exc:
-        print(f"[envforge] Failed to load schema: {exc}", file=sys.stderr)
-        return 1
-
-    try:
-        env = parse_env_file(args.env)
-    except OSError as exc:
-        print(f"[envforge] Failed to read .env file: {exc}", file=sys.stderr)
-        return 1
-
+def cmd_validate(args) -> int:
+    schema = Schema.from_json(args.schema)
+    env = parse_env_file(args.env)
     validator = Validator(schema)
     result = validator.validate(env)
     if result.is_valid:
-        print("[envforge] Validation passed.")
+        print("Validation passed.")
         return 0
+    else:
+        print("Validation failed:")
+        for error in result.errors:
+            print(f"  {error}")
+        return 1
 
-    print("[envforge] Validation failed:")
-    for err in result.errors:
-        print(f"  - {err}")
+
+def cmd_diff(args) -> int:
+    target_env = parse_env_file(args.target)
+    if args.mode == "schema":
+        schema = Schema.from_json(args.base)
+        result = diff_env_against_schema(target_env, schema)
+    else:
+        base_env = parse_env_file(args.base)
+        result = diff_two_envs(base_env, target_env)
+
+    print(result.summary())
+    return 1 if result.has_differences else 0
+
+
+def main(argv=None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.command == "generate":
+        return cmd_generate(args)
+    if args.command == "validate":
+        return cmd_validate(args)
+    if args.command == "diff":
+        return cmd_diff(args)
+    parser.print_help()
     return 1
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = _build_parser()
-    args = parser.parse_args(argv)
-    dispatch = {"generate": cmd_generate, "validate": cmd_validate}
-    sys.exit(dispatch[args.command](args))
-
-
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
