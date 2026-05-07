@@ -24,6 +24,7 @@ def env_file(tmp_path: Path) -> Path:
 
 
 def make_args(**kwargs) -> argparse.Namespace:
+    """Build an argparse.Namespace with sensible defaults for cmd_redact."""
     defaults = {
         "schema": None,
         "pattern": None,
@@ -84,3 +85,9 @@ class TestCmdRedact:
         cmd_redact(args)
         err = capsys.readouterr().err
         assert "Redacted" in err
+
+    def test_missing_env_file_returns_nonzero(self, tmp_path, capsys):
+        """cmd_redact should return a non-zero exit code when the file is missing."""
+        args = make_args(env_file=str(tmp_path / "nonexistent.env"))
+        rc = cmd_redact(args)
+        assert rc != 0
