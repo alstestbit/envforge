@@ -8,18 +8,33 @@ from envforge.transformer import transform_env
 from envforge.generator import generate_env_string
 
 
+def _load_schema(path: str) -> Schema | None:
+    """Load and parse a schema from a JSON file path.
+
+    Returns the parsed Schema on success, or raises an exception on failure.
+    """
+    with open(path) as f:
+        return Schema.from_json(f.read())
+
+
 def cmd_transform(args: Namespace) -> int:
     """Transform env values based on schema metadata."""
     schema = None
     if args.schema:
         try:
-            schema = Schema.from_json(open(args.schema).read())
+            schema = _load_schema(args.schema)
+        except FileNotFoundError:
+            print(f"Error loading schema: file not found: {args.schema}", file=sys.stderr)
+            return 1
         except Exception as e:
             print(f"Error loading schema: {e}", file=sys.stderr)
             return 1
 
     try:
         env = parse_env_file(args.env_file)
+    except FileNotFoundError:
+        print(f"Error reading env file: file not found: {args.env_file}", file=sys.stderr)
+        return 1
     except Exception as e:
         print(f"Error reading env file: {e}", file=sys.stderr)
         return 1
